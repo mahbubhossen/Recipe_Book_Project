@@ -1,0 +1,169 @@
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+const { MongoClient, ServerApiVersion } = require('mongodb');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qoghsen.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+let recipeCollection;
+
+async function run() {
+  try {
+    await client.connect();
+    console.log("Connected to MongoDB");
+
+    const db = client.db("recipeDB");
+    recipeCollection = db.collection("recipes");
+
+    
+    app.get("/recipes/top", async (req, res) => {
+      try {
+        const topRecipes = await recipeCollection
+          .find()
+          .sort({ likes: -1 })
+          .limit(6)
+          .toArray();
+        res.send(topRecipes);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch top recipes", error: err.message });
+      }
+    });
+
+    
+    app.post("/recipes", async (req, res) => {
+      try {
+        const recipe = req.body;
+        recipe.likes = 0; 
+
+        const result = await recipeCollection.insertOne(recipe);
+        res.status(201).json({ success: true, insertedId: result.insertedId });
+      } catch (err) {
+        res.status(500).json({ success: false, message: "Failed to add recipe", error: err.message });
+      }
+    });
+
+    
+    app.get("/recipes", async (req, res) => {
+      try {
+        const allRecipes = await recipeCollection.find().toArray();
+        res.send(allRecipes);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch all recipes", error: err.message });
+      }
+    });
+
+
+    // Get single recipe by ID
+app.get("/recipes/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const recipe = await recipeCollection.findOne({ _id: new ObjectId(id) });
+    res.send(recipe);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch recipe", error: error.message });
+  }
+});
+
+// Like a recipe (increase like count)
+app.patch("/recipes/:id/like", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await recipeCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $inc: { likes: 1 } },
+      { returnDocument: "after" }
+    );
+    res.send({ updatedLikes: result.value.likes });
+  } catch (error) {
+    res.status(500).send({ message: "Failed to like", error: error.message });
+  }
+});
+
+
+// New API: Get recipes by user email
+app.get("/my-recipes", async (req, res) => {
+  const userEmail = req.query.email;
+
+  if (!userEmail) {
+    return res.status(400).send({ message: "User email is required" });
+  }
+
+  try {
+    const userRecipes = await recipeCollection.find({ userEmail }).toArray();
+    res.send(userRecipes);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch user's recipes", error: err.message });
+  }
+});
+
+// New API: Delete a recipe by ID
+app.delete("/recipes/:id", async (req, res) => {
+  const id = req.params.id;
+  const { ObjectId } = require("mongodb");
+
+  try {
+    const result = await recipeCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to delete recipe", error: err.message });
+  }
+});
+
+// New API: Update a recipe by ID
+app.put("/recipes/:id", async (req, res) => {
+  const id = req.params.id;
+  const { ObjectId } = require("mongodb");
+  const updatedData = req.body;
+
+  try {
+    const result = await recipeCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedData }
+    );
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to update recipe", error: err.message });
+  }
+});
+
+
+
+    // Get all recipes
+app.get("/all-recipes", async (req, res) => {
+  try {
+    const recipes = await recipeCollection.find().toArray();
+    res.send(recipes);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch recipes", error: error.message });
+  }
+});
+
+  } catch (err) {
+    console.error("MongoDB Connection Error:", err);
+  }
+}
+run().catch(console.dir);
+
+
+app.get('/', (req, res) => {
+  res.send('Recipe server is running');
+});
+
+app.listen(port, () => {
+  console.log(`Recipe server is running on port ${port}`);
+});
